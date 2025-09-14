@@ -11,12 +11,11 @@ if USE_CUDA:
     extra_ldflags=["-L/usr/local/cuda/lib64/"])
 
 class ReorderLayerNorm(nn.Module):
-    def __init__(self, ori_layer_norm, act_quant_params=None, a4_out_quantizer=None) -> None:
+    def __init__(self, ori_layer_norm, act_quant_params=None) -> None:
         super().__init__()
         self.ori_layer_norm = ori_layer_norm
         self.use_act_quant = True
         self.out_quantizer = UniformAffineQuantizer(**act_quant_params)
-        self.a4_out_quantizer = a4_out_quantizer
 
     def forward(self, x):
         if USE_CUDA:
@@ -34,10 +33,7 @@ class ReorderLayerNorm(nn.Module):
                 elif x.ndim == 2:
                     out = torch.index_select(out, 1, self.reorder_index)
         if self.use_act_quant:
-            if self.a4_out_quantizer is not None:
-                out = self.a4_out_quantizer(out)
-            else:
-                out = self.out_quantizer(out)
+            out = self.out_quantizer(out)
         return out
 
     def set_quant_state(self, use_weight_quant, use_act_quant):

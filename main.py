@@ -4,21 +4,17 @@ import sys
 import random
 import numpy as np
 from models.opt import OPTClass
-from models.llama import LLaMAClass
 import torch
 import time
 from datautils import get_loaders
 from lm_evaluation.lm_eval import tasks, evaluator
 from quantize.opt_reorder_quantize import opt_reorder_quantize
-from quantize.llama_reorder_quantize import llama_reorder_quantize
 import datetime
 from models.int_opt_layer import QuantOPTAttention
-from models.int_llama_layer import QuantLLaMAAttention
 from pprint import pprint
 from parallel_utils import map_layers_to_multi_gpus, get_lowest_occupied_gpu
 import torch.nn as nn
 from quantize.opt_reorder_quantize import opt_reorder_quantize
-from quantize.llama_reorder_quantize import llama_reorder_quantize
 from tqdm import tqdm
 
 torch.backends.cudnn.benchmark = True
@@ -30,10 +26,8 @@ net_choices = [
     "opt-13b",
     "opt-30b",
     "opt-66b",
-    "llama-2-7b",
-    "llama-2-13b",
-    "llama-3-8b",
-    "llama-3-70b",
+    # "llama-7b",
+    # "llama-13b",
     # "bloom-3b",
 ]
 
@@ -43,7 +37,7 @@ net_choices = [
 @torch.no_grad()
 def evaluate(lm, args):
     for name, m in lm.model.named_modules():
-        if isinstance(m, (QuantOPTAttention, QuantLLaMAAttention)):
+        if isinstance(m, (QuantOPTAttention,)):
             m.name = name
             # m.register_forward_hook(mem_test_hook)
     results = {}
@@ -221,38 +215,6 @@ def main():
     parser.add_argument(
         "--multigpu", action="store_true", help="at eval, map model to multiple gpus"
     )
-    
-    # A4 format options
-    parser.add_argument(
-        "--aformat", 
-        type=str, 
-        default="cluster", 
-        choices=["cluster", "mxfp4", "nvfp4"],
-        help="Activation quantization format: cluster (default), mxfp4, or nvfp4"
-    )
-    parser.add_argument(
-        "--mx-block-size", 
-        type=int, 
-        default=32,
-        help="Block size for MXFP4 quantization (default: 32)"
-    )
-    parser.add_argument(
-        "--mx-clip-quantile", 
-        type=float, 
-        default=0.999,
-        help="Quantile for clipping max_abs values (default: 0.999)"
-    )
-    parser.add_argument(
-        "--mx-headwise", 
-        action="store_true",
-        help="Enable headwise reordering within attention heads"
-    )
-    parser.add_argument(
-        "--mx-local-swap", 
-        type=int, 
-        default=0,
-        help="Number of local swap iterations for boundary optimization (default: 0)"
-    )
 
     args = parser.parse_args()
     args.batch_size = 1  # BS=1 is used for zeroShot tasks!
@@ -277,28 +239,6 @@ def main():
             lm = OPTClass(args)
             torch.save(lm, cache_file)
         lm.model.eval()
-    elif "llama" in args.net:
-        # Map LLaMA model names to HuggingFace model names
-        model_mapping = {
-            "llama-2-7b": "meta-llama/Llama-2-7b-hf",
-            "llama-2-13b": "meta-llama/Llama-2-13b-hf", 
-            "llama-3-8b": "meta-llama/Llama-3-8B",
-            "llama-3-70b": "meta-llama/Llama-3-70B",
-        }
-        args.model = model_mapping.get(args.net, f"meta-llama/{args.net}")
-        if not os.path.exists(f"{args.cache_dir}/{args.net.split('-')[0]}/"):
-            os.makedirs(f"{args.cache_dir}/{args.net.split('-')[0]}/")
-        args.cache_dir = (
-            f"{args.cache_dir}/{args.net.split('-')[0]}/{args.net.split('-')[1]}"
-        )
-        print(args.cache_dir)
-        cache_file = f"{args.cache_dir}/torch_model.pth"
-        if os.path.exists(cache_file):
-            lm = torch.load(cache_file)
-        else:
-            lm = LLaMAClass(args)
-            torch.save(lm, cache_file)
-        lm.model.eval()
     else:
         raise NotImplementedError
 
@@ -312,24 +252,6 @@ def main():
     if "opt" in args.model:
         cache_dataloader = (
             f"/tmp/dataloader_opt_{args.calib_dataset}_{args.nsamples}.cache"
-        )
-        if os.path.exists(cache_dataloader):
-            dataloader = torch.load(cache_dataloader)
-            print(f"load calibration from {cache_dataloader}")
-        else:
-            dataloader, testloader = get_loaders(
-                args.calib_dataset,
-                nsamples=args.nsamples,
-                seed=args.seed,
-                model=args.model,
-                seqlen=lm.seqlen,
-                cache_dir=args.cache_dir,
-            )
-            torch.save(dataloader, cache_dataloader)
-        lm.model.eval()
-    elif "llama" in args.model:
-        cache_dataloader = (
-            f"/tmp/dataloader_llama_{args.calib_dataset}_{args.nsamples}.cache"
         )
         if os.path.exists(cache_dataloader):
             dataloader = torch.load(cache_dataloader)
@@ -414,20 +336,6 @@ def main():
         )
 
         for layer in lm.model.model.decoder.layers:
-            if hasattr(layer, "set_quant_state"):
-                layer.set_quant_state(
-                    not args.disable_w_quant, not args.disable_a_quant
-                )
-    elif "llama" in args.model:
-        llama_reorder_quantize(
-            lm,
-            args,
-            dataloader,
-            n_clusters,
-            args.reorder,
-        )
-
-        for layer in lm.model.model.layers:
             if hasattr(layer, "set_quant_state"):
                 layer.set_quant_state(
                     not args.disable_w_quant, not args.disable_a_quant

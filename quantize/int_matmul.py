@@ -12,8 +12,6 @@ class QuantMatMul(nn.Module):
         x2_quant_params: dict = {},
         disable_act_quant=False,
         matmul_func=torch.bmm,
-        a4_x1_quantizer=None,
-        a4_x2_quantizer=None,
     ):
         super().__init__()
         # de-activate the quantized forward default
@@ -23,10 +21,6 @@ class QuantMatMul(nn.Module):
         self.x1_quantizer = UniformAffineQuantizer(**x1_quant_params)
         self.x2_quantizer = UniformAffineQuantizer(**x2_quant_params)
         self.matmul_func = matmul_func
-
-        # A4 quantizers
-        self.a4_x1_quantizer = a4_x1_quantizer
-        self.a4_x2_quantizer = a4_x2_quantizer
 
         self.disable_act_quant = disable_act_quant
 
@@ -46,18 +40,12 @@ class QuantMatMul(nn.Module):
 
     def quant_x1(self, x1):
         if self.use_act_quant:
-            if self.a4_x1_quantizer is not None:
-                x1 = self.a4_x1_quantizer(x1)
-            else:
-                x1 = self.x1_quantizer(x1)
+            x1 = self.x1_quantizer(x1)
         return x1
 
     def quant_x2(self, x2):
         if self.use_act_quant:
-            if self.a4_x2_quantizer is not None:
-                x2 = self.a4_x2_quantizer(x2)
-            else:
-                x2 = self.x2_quantizer(x2)
+            x2 = self.x2_quantizer(x2)
         return x2
 
     def forward(self, x1, x2):

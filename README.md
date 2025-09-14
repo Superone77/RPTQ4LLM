@@ -16,9 +16,7 @@ python packages
 
 
 ### Usage
-The RPTQ approach can be applied to OPT and LLaMA models.
-
-#### OPT Models
+The RPTQ approach can be applied to OPT models.
 ```
 python main.py opt-1.3b --wbits 4 --abits 4 --eval_ppl --tasks lambada_openai,piqa,arc_easy,arc_challenge,openbookqa,boolq
 ```
@@ -32,26 +30,6 @@ To quantize larger network please use `--multigpu`:
 ```
 python main.py opt-66b --wbits 4 --abits 4 --only_quant_kv --eval_ppl --tasks lambada_openai,piqa,arc_easy,arc_challenge,openbookqa,boolq --multigpu
 ```
-
-#### LLaMA Models (NEW!)
-```
-# LLaMA-2-7B quantization
-python main.py llama-2-7b --wbits 4 --abits 4 --eval_ppl --tasks lambada_openai,piqa,arc_easy,arc_challenge,openbookqa,boolq
-
-# LLaMA-3-8B quantization
-python main.py llama-3-8b --wbits 4 --abits 4 --eval_ppl --tasks lambada_openai,piqa,arc_easy,arc_challenge,openbookqa,boolq
-
-# Only quantize K/V cache for LLaMA
-python main.py llama-2-7b --wbits 4 --abits 4 --only_quant_kv --eval_ppl --tasks lambada_openai,piqa,arc_easy,arc_challenge,openbookqa,boolq
-
-# Aggressive quantization (W3A3)
-python main.py llama-3-8b --wbits 3 --abits 3 --eval_ppl --tasks lambada_openai,piqa
-```
-
-#### Supported Models
-- **OPT**: opt-125m, opt-1.3b, opt-6.7b, opt-13b, opt-30b, opt-66b
-- **LLaMA-2**: llama-2-7b, llama-2-13b
-- **LLaMA-3**: llama-3-8b, llama-3-70b
 
 ### Results
 
