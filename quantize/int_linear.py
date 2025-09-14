@@ -18,6 +18,7 @@ class QuantLinear(nn.Module):
         weight_quant_params: dict = {},
         act_quant_params: dict = {},
         disable_input_quant=False,
+        a4_quantizer=None,
     ):
         super().__init__()
         self.fwd_kwargs = dict()
@@ -42,6 +43,9 @@ class QuantLinear(nn.Module):
             self.act_quantizer = UniformAffineQuantizer(**act_quant_params)
         else:
             self.act_quantizer = None
+
+        # A4 quantizer wrapper
+        self.a4_quantizer = a4_quantizer
 
         self.ignore_reconstruction = False
         self.disable_input_quant = disable_input_quant
@@ -71,8 +75,11 @@ class QuantLinear(nn.Module):
             bias = self.bias
 
         if self.use_act_quant and not self.disable_input_quant:
-
-            input = self.act_quantizer(input)
+            # Use A4 quantizer if available, otherwise use original quantizer
+            if self.a4_quantizer is not None:
+                input = self.a4_quantizer(input)
+            else:
+                input = self.act_quantizer(input)
             if self.record_quant_input:
                 # for debug
                 self.recorded_quant_input = input
