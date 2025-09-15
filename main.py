@@ -4,17 +4,19 @@ import sys
 import random
 import numpy as np
 from models.opt import OPTClass
+from models.llama import LlamaClass
 import torch
 import time
 from datautils import get_loaders
 from lm_evaluation.lm_eval import tasks, evaluator
 from quantize.opt_reorder_quantize import opt_reorder_quantize
+from quantize.llama_reorder_quantize import llama_reorder_quantize
 import datetime
 from models.int_opt_layer import QuantOPTAttention
+from models.int_llama_layer import QuantLlamaAttention
 from pprint import pprint
 from parallel_utils import map_layers_to_multi_gpus, get_lowest_occupied_gpu
 import torch.nn as nn
-from quantize.opt_reorder_quantize import opt_reorder_quantize
 from tqdm import tqdm
 
 torch.backends.cudnn.benchmark = True
@@ -26,9 +28,10 @@ net_choices = [
     "opt-13b",
     "opt-30b",
     "opt-66b",
-    # "llama-7b",
-    # "llama-13b",
-    # "bloom-3b",
+    "llama-7b",
+    "llama-13b",
+    "llama3-8b",
+    "llama3-70b",
 ]
 
 # tasks lambada_openai,piqa,arc_easy,arc_challenge,openbookqa,boolq
@@ -37,7 +40,7 @@ net_choices = [
 @torch.no_grad()
 def evaluate(lm, args):
     for name, m in lm.model.named_modules():
-        if isinstance(m, (QuantOPTAttention,)):
+        if isinstance(m, (QuantOPTAttention, QuantLlamaAttention)):
             m.name = name
             # m.register_forward_hook(mem_test_hook)
     results = {}
@@ -239,6 +242,34 @@ def main():
             lm = OPTClass(args)
             torch.save(lm, cache_file)
         lm.model.eval()
+    elif "llama3" in args.net:
+        size = args.net.split('-')[1]
+        args.model = f"meta-llama/Meta-Llama-3-{size.upper()}"
+        if not os.path.exists(f"{args.cache_dir}/llama3/"):
+            os.makedirs(f"{args.cache_dir}/llama3/")
+        args.cache_dir = f"{args.cache_dir}/llama3/{size}"
+        print(args.cache_dir)
+        cache_file = f"{args.cache_dir}/torch_model.pth"
+        if os.path.exists(cache_file):
+            lm = torch.load(cache_file)
+        else:
+            lm = LlamaClass(args)
+            torch.save(lm, cache_file)
+        lm.model.eval()
+    elif "llama" in args.net:
+        size = args.net.split('-')[1]
+        args.model = f"meta-llama/Llama-2-{size}-hf"
+        if not os.path.exists(f"{args.cache_dir}/llama/"):
+            os.makedirs(f"{args.cache_dir}/llama/")
+        args.cache_dir = f"{args.cache_dir}/llama/{size}"
+        print(args.cache_dir)
+        cache_file = f"{args.cache_dir}/torch_model.pth"
+        if os.path.exists(cache_file):
+            lm = torch.load(cache_file)
+        else:
+            lm = LlamaClass(args)
+            torch.save(lm, cache_file)
+        lm.model.eval()
     else:
         raise NotImplementedError
 
@@ -252,6 +283,24 @@ def main():
     if "opt" in args.model:
         cache_dataloader = (
             f"/tmp/dataloader_opt_{args.calib_dataset}_{args.nsamples}.cache"
+        )
+        if os.path.exists(cache_dataloader):
+            dataloader = torch.load(cache_dataloader)
+            print(f"load calibration from {cache_dataloader}")
+        else:
+            dataloader, testloader = get_loaders(
+                args.calib_dataset,
+                nsamples=args.nsamples,
+                seed=args.seed,
+                model=args.model,
+                seqlen=lm.seqlen,
+                cache_dir=args.cache_dir,
+            )
+            torch.save(dataloader, cache_dataloader)
+        lm.model.eval()
+    elif "llama" in args.model:
+        cache_dataloader = (
+            f"/tmp/dataloader_llama_{args.calib_dataset}_{args.nsamples}.cache"
         )
         if os.path.exists(cache_dataloader):
             dataloader = torch.load(cache_dataloader)
@@ -336,6 +385,20 @@ def main():
         )
 
         for layer in lm.model.model.decoder.layers:
+            if hasattr(layer, "set_quant_state"):
+                layer.set_quant_state(
+                    not args.disable_w_quant, not args.disable_a_quant
+                )
+    elif "llama" in args.model:
+        llama_reorder_quantize(
+            lm,
+            args,
+            dataloader,
+            n_clusters,
+            args.reorder,
+        )
+
+        for layer in lm.model.model.layers:
             if hasattr(layer, "set_quant_state"):
                 layer.set_quant_state(
                     not args.disable_w_quant, not args.disable_a_quant
