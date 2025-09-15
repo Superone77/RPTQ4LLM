@@ -1,3 +1,4 @@
+import os
 import torch
 from .models_utils import BaseLM, find_layers
 from transformers import LlamaForCausalLM, AutoTokenizer
@@ -14,14 +15,19 @@ class LlamaClass(BaseLM):
         self.model_name = args.model
         self.batch_size_per_gpu = args.batch_size
 
+        model_kwargs = {"torch_dtype": "auto"}
+        tokenizer_kwargs = {"use_fast": False}
+        if args.cache_dir and not os.path.isdir(self.model_name):
+            model_kwargs["cache_dir"] = args.cache_dir
+            tokenizer_kwargs["cache_dir"] = args.cache_dir
         self.model = LlamaForCausalLM.from_pretrained(
-            self.model_name, cache_dir=args.cache_dir, torch_dtype="auto"
+            self.model_name, **model_kwargs
         )
         self.seqlen = self.model.config.max_position_embeddings
         self.model.eval()
 
         self.tokenizer = AutoTokenizer.from_pretrained(
-            self.model_name, cache_dir=args.cache_dir, use_fast=False
+            self.model_name, **tokenizer_kwargs
         )
         self.vocab_size = self.tokenizer.vocab_size
         print("Llama vocab size: ", self.vocab_size)
