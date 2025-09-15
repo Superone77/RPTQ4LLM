@@ -1,5 +1,3 @@
-import pdb
-
 import numpy as np
 import torch
 
@@ -16,10 +14,7 @@ def get_wikitext2(nsamples, seed, seqlen, model,cache_dir):
     testdata = load_dataset('wikitext', 'wikitext-2-raw-v1',cache_dir='/datasets/tmp/wikitext/', split='test')
 
     from transformers import AutoTokenizer
-    if "llama" in model:
-        tokenizer = AutoTokenizer.from_pretrained(cache_dir, use_fast=False)
-    else:
-        tokenizer = AutoTokenizer.from_pretrained(model, cache_dir=cache_dir, use_fast=False)
+    tokenizer = AutoTokenizer.from_pretrained(model, cache_dir=cache_dir, use_fast=False)
 
     trainenc = tokenizer("\n\n".join(traindata['text']), return_tensors='pt')
     testenc = tokenizer("\n\n".join(testdata['text']), return_tensors='pt')
@@ -43,10 +38,7 @@ def get_ptb(nsamples, seed, seqlen, model,cache_dir):
     valdata = load_dataset('ptb_text_only', 'penn_treebank',cache_dir='/datasets/tmp/ptb_text_only/', split='validation')
 
     from transformers import AutoTokenizer
-    if "llama" in model:
-        tokenizer = AutoTokenizer.from_pretrained(cache_dir, use_fast=False)
-    else:
-        tokenizer = AutoTokenizer.from_pretrained(model, cache_dir=cache_dir, use_fast=False)
+    tokenizer = AutoTokenizer.from_pretrained(model, cache_dir=cache_dir, use_fast=False)
 
     trainenc = tokenizer("\n\n".join(traindata['sentence']), return_tensors='pt')
     testenc = tokenizer("\n\n".join(valdata['sentence']), return_tensors='pt')
@@ -74,10 +66,7 @@ def get_c4(nsamples, seed, seqlen, model,cache_dir):
     )
 
     from transformers import AutoTokenizer
-    if "llama" in model:
-        tokenizer = AutoTokenizer.from_pretrained(cache_dir, use_fast=False)
-    else:
-        tokenizer = AutoTokenizer.from_pretrained(model, cache_dir=cache_dir, use_fast=False)
+    tokenizer = AutoTokenizer.from_pretrained(model, cache_dir=cache_dir, use_fast=False)
 
     import random
     random.seed(seed)
