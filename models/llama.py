@@ -23,6 +23,8 @@ class LlamaClass(BaseLM):
         self.model = LlamaForCausalLM.from_pretrained(
             self.model_name, **model_kwargs
         )
+        if getattr(args, "hidden_layer_num", None):
+            self.truncate_hidden_layers(args.hidden_layer_num)
         self.seqlen = self.model.config.max_position_embeddings
         self.model.eval()
 
@@ -31,6 +33,17 @@ class LlamaClass(BaseLM):
         )
         self.vocab_size = self.tokenizer.vocab_size
         print("Llama vocab size: ", self.vocab_size)
+
+    def truncate_hidden_layers(self, hidden_layer_num: int):
+        total_layers = len(self.model.model.layers)
+        if hidden_layer_num is not None and hidden_layer_num < total_layers:
+            self.model.model.layers = nn.ModuleList(
+                self.model.model.layers[:hidden_layer_num]
+            )
+            self.model.config.num_hidden_layers = hidden_layer_num
+            print(
+                f"Using first {hidden_layer_num} of {total_layers} Llama layers for debugging"
+            )
 
     @property
     def eot_token(self) -> str:
