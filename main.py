@@ -196,6 +196,12 @@ def main():
     parser.add_argument("--load", type=str, default="")
     parser.add_argument("--disable_w_quant", action="store_true")
     parser.add_argument("--disable_a_quant", action="store_true")
+    parser.add_argument(
+        "--model_path",
+        type=str,
+        default=None,
+        help="Path to local LLaMA model directory",
+    )
     parser.add_argument("--R1_clusters", type=int, default=32)
     parser.add_argument("--R2_clusters", type=int, default=4)
     parser.add_argument("--R3_clusters", type=int, default=4)
@@ -244,31 +250,41 @@ def main():
         lm.model.eval()
     elif "llama3" in args.net:
         size = args.net.split('-')[1]
-        args.model = f"meta-llama/Meta-Llama-3-{size.upper()}"
-        if not os.path.exists(f"{args.cache_dir}/llama3/"):
-            os.makedirs(f"{args.cache_dir}/llama3/")
-        args.cache_dir = f"{args.cache_dir}/llama3/{size}"
-        print(args.cache_dir)
-        cache_file = f"{args.cache_dir}/torch_model.pth"
-        if os.path.exists(cache_file):
+        if args.model_path is not None:
+            args.model = args.model_path
+            cache_file = None
+        else:
+            args.model = f"meta-llama/Meta-Llama-3-{size.upper()}"
+            if not os.path.exists(f"{args.cache_dir}/llama3/"):
+                os.makedirs(f"{args.cache_dir}/llama3/")
+            args.cache_dir = f"{args.cache_dir}/llama3/{size}"
+            print(args.cache_dir)
+            cache_file = f"{args.cache_dir}/torch_model.pth"
+        if cache_file and os.path.exists(cache_file):
             lm = torch.load(cache_file)
         else:
             lm = LlamaClass(args)
-            torch.save(lm, cache_file)
+            if cache_file:
+                torch.save(lm, cache_file)
         lm.model.eval()
     elif "llama" in args.net:
         size = args.net.split('-')[1]
-        args.model = f"meta-llama/Llama-2-{size}-hf"
-        if not os.path.exists(f"{args.cache_dir}/llama/"):
-            os.makedirs(f"{args.cache_dir}/llama/")
-        args.cache_dir = f"{args.cache_dir}/llama/{size}"
-        print(args.cache_dir)
-        cache_file = f"{args.cache_dir}/torch_model.pth"
-        if os.path.exists(cache_file):
+        if args.model_path is not None:
+            args.model = args.model_path
+            cache_file = None
+        else:
+            args.model = f"meta-llama/Llama-2-{size}-hf"
+            if not os.path.exists(f"{args.cache_dir}/llama/"):
+                os.makedirs(f"{args.cache_dir}/llama/")
+            args.cache_dir = f"{args.cache_dir}/llama/{size}"
+            print(args.cache_dir)
+            cache_file = f"{args.cache_dir}/torch_model.pth"
+        if cache_file and os.path.exists(cache_file):
             lm = torch.load(cache_file)
         else:
             lm = LlamaClass(args)
-            torch.save(lm, cache_file)
+            if cache_file:
+                torch.save(lm, cache_file)
         lm.model.eval()
     else:
         raise NotImplementedError
