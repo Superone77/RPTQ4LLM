@@ -224,6 +224,12 @@ def main():
     parser.add_argument(
         "--multigpu", action="store_true", help="at eval, map model to multiple gpus"
     )
+    parser.add_argument(
+        "--hidden_layer_num",
+        type=int,
+        default=None,
+        help="Number of LLaMA hidden layers to use for quick debugging",
+    )
 
     args = parser.parse_args()
     args.batch_size = 1  # BS=1 is used for zeroShot tasks!
@@ -266,6 +272,8 @@ def main():
             lm = LlamaClass(args)
             if cache_file:
                 torch.save(lm, cache_file)
+        if args.hidden_layer_num:
+            lm.truncate_hidden_layers(args.hidden_layer_num)
         lm.model.eval()
     elif "llama" in args.net:
         size = args.net.split('-')[1]
@@ -285,6 +293,8 @@ def main():
             lm = LlamaClass(args)
             if cache_file:
                 torch.save(lm, cache_file)
+        if args.hidden_layer_num:
+            lm.truncate_hidden_layers(args.hidden_layer_num)
         lm.model.eval()
     else:
         raise NotImplementedError

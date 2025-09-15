@@ -31,6 +31,11 @@ To quantize larger network please use `--multigpu`:
 python main.py opt-66b --wbits 4 --abits 4 --only_quant_kv --eval_ppl --tasks lambada_openai,piqa,arc_easy,arc_challenge,openbookqa,boolq --multigpu
 ```
 
+For quick debugging of LLaMA models, you can load only the first `N` hidden layers:
+```
+python main.py llama-7b --hidden_layer_num 2 --eval_ppl
+```
+
 ### Results
 
 Perplexity
