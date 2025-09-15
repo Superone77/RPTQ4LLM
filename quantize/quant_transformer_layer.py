@@ -1,9 +1,11 @@
 import torch
+import os
+
+from quantize.gptq import GPTQ
 from quantize.int_linear import QuantLinear
 from quantize.int_matmul import QuantMatMul
-from quantize.reorder_layer_norm import ReorderLayerNorm
-from quantize.gptq import GPTQ
 from quantize.mem_packer import MemoryPacker
+from quantize.reorder_layer_norm import ReorderLayerNorm
 from torch.nn import Parameter
 
 
@@ -42,15 +44,19 @@ def quant_layer(qlayer, args, outs, inps, attention_mask, dev):
     # for activation quantize
     a_quantizers = {}
     w_quantizers = {}
+    nvfp4_enabled = os.environ.get("NVFP4_ENABLE") == "1"
     for name, m in qlayer.named_modules():
         if isinstance(m, (QuantLinear)) and not m.disable_input_quant:
-            a_quantizers[name] = m.act_quantizer
+            if not nvfp4_enabled:
+                a_quantizers[name] = m.act_quantizer
             w_quantizers[name] = m.weight_quantizer
         if isinstance(m, ReorderLayerNorm) and m.out_quantizer is not None:
-            a_quantizers[name] = m.out_quantizer
+            if not nvfp4_enabled:
+                a_quantizers[name] = m.out_quantizer
         if isinstance(m, QuantMatMul):
-            a_quantizers[name + "x1"] = m.x1_quantizer
-            a_quantizers[name + "x2"] = m.x2_quantizer
+            if not nvfp4_enabled:
+                a_quantizers[name + "x1"] = m.x1_quantizer
+                a_quantizers[name + "x2"] = m.x2_quantizer
 
     for name, quantizer in a_quantizers.items():
         quantizer.set_calibration_mode()

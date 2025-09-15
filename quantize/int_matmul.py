@@ -1,7 +1,10 @@
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import Union
+
+from quantize.nvfp4 import quant_nvfp4
 from quantize.quantizer import UniformAffineQuantizer
 
 
@@ -40,12 +43,18 @@ class QuantMatMul(nn.Module):
 
     def quant_x1(self, x1):
         if self.use_act_quant:
-            x1 = self.x1_quantizer(x1)
+            if os.environ.get("NVFP4_ENABLE") == "1":
+                x1 = quant_nvfp4(x1)
+            else:
+                x1 = self.x1_quantizer(x1)
         return x1
 
     def quant_x2(self, x2):
         if self.use_act_quant:
-            x2 = self.x2_quantizer(x2)
+            if os.environ.get("NVFP4_ENABLE") == "1":
+                x2 = quant_nvfp4(x2)
+            else:
+                x2 = self.x2_quantizer(x2)
         return x2
 
     def forward(self, x1, x2):

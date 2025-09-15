@@ -1,9 +1,12 @@
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import Union
-from quantize.quantizer import UniformAffineQuantizer
+
 import numpy as np
+from quantize.nvfp4 import quant_nvfp4
+from quantize.quantizer import UniformAffineQuantizer
 
 
 class QuantLinear(nn.Module):
@@ -71,8 +74,10 @@ class QuantLinear(nn.Module):
             bias = self.bias
 
         if self.use_act_quant and not self.disable_input_quant:
-
-            input = self.act_quantizer(input)
+            if os.environ.get("NVFP4_ENABLE") == "1":
+                input = quant_nvfp4(input)
+            else:
+                input = self.act_quantizer(input)
             if self.record_quant_input:
                 # for debug
                 self.recorded_quant_input = input

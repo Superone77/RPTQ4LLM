@@ -1,11 +1,18 @@
 import argparse
+import fnmatch
 import json
 import logging
-import fnmatch
 
-from lm_eval import tasks, evaluator
+from lm_eval import evaluator, tasks
 
 logging.getLogger("openai").setLevel(logging.WARNING)
+
+
+def get_all_task_names():
+    """Return all available task names for the installed lm_eval version."""
+    if hasattr(tasks, "get_task_names"):
+        return list(tasks.get_task_names())
+    return tasks.ALL_TASKS
 
 
 class MultiChoice:
@@ -27,9 +34,9 @@ class MultiChoice:
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model",default="")
+    parser.add_argument("--model", default="")
     parser.add_argument("--model_args", default="")
-    parser.add_argument("--tasks", default=None, choices=MultiChoice(tasks.ALL_TASKS))
+    parser.add_argument("--tasks", default=None, choices=MultiChoice(get_all_task_names()))
     parser.add_argument("--provide_description", action="store_true")
     parser.add_argument("--num_fewshot", type=int, default=0)
     parser.add_argument("--batch_size", type=int, default=None)
@@ -54,10 +61,10 @@ def pattern_match(patterns, source_list):
     return list(task_names)
 
 
-def main(model,tasks):
+def main(model, tasks):
     args = parse_args()
-    args.model=model
-    args.tasks=tasks
+    args.model = model
+    args.tasks = tasks
     assert not args.provide_description  # not implemented
 
     if args.limit:
@@ -65,10 +72,11 @@ def main(model,tasks):
             "WARNING: --limit SHOULD ONLY BE USED FOR TESTING. REAL METRICS SHOULD NOT BE COMPUTED USING LIMIT."
         )
 
+    all_tasks = get_all_task_names()
     if args.tasks is None:
-        task_names = tasks.ALL_TASKS
+        task_names = all_tasks
     else:
-        task_names = pattern_match(args.tasks.split(","), tasks.ALL_TASKS)
+        task_names = pattern_match(args.tasks.split(","), all_tasks)
 
     print(f"Selected Tasks: {task_names}")
 

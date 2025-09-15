@@ -1,7 +1,10 @@
+import os
 import torch
 import torch.nn as nn
-from quantize.quantizer import UniformAffineQuantizer
 from torch.utils.cpp_extension import load
+
+from quantize.nvfp4 import quant_nvfp4
+from quantize.quantizer import UniformAffineQuantizer
 
 USE_CUDA=False
 if USE_CUDA:
@@ -33,7 +36,10 @@ class ReorderLayerNorm(nn.Module):
                 elif x.ndim == 2:
                     out = torch.index_select(out, 1, self.reorder_index)
         if self.use_act_quant:
-            out = self.out_quantizer(out)
+            if os.environ.get("NVFP4_ENABLE") == "1":
+                out = quant_nvfp4(out)
+            else:
+                out = self.out_quantizer(out)
         return out
 
     def set_quant_state(self, use_weight_quant, use_act_quant):
