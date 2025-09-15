@@ -272,8 +272,6 @@ def main():
             lm = LlamaClass(args)
             if cache_file:
                 torch.save(lm, cache_file)
-        if args.hidden_layer_num:
-            lm.truncate_hidden_layers(args.hidden_layer_num)
         lm.model.eval()
     elif "llama" in args.net:
         size = args.net.split('-')[1]
@@ -293,8 +291,6 @@ def main():
             lm = LlamaClass(args)
             if cache_file:
                 torch.save(lm, cache_file)
-        if args.hidden_layer_num:
-            lm.truncate_hidden_layers(args.hidden_layer_num)
         lm.model.eval()
     else:
         raise NotImplementedError

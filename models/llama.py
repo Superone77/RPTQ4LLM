@@ -1,7 +1,7 @@
 import os
 import torch
 from .models_utils import BaseLM, find_layers
-from transformers import LlamaForCausalLM, AutoTokenizer
+from transformers import LlamaForCausalLM, AutoTokenizer, AutoConfig
 import torch.nn.functional as F
 from torch import nn
 from tqdm import tqdm
@@ -15,16 +15,25 @@ class LlamaClass(BaseLM):
         self.model_name = args.model
         self.batch_size_per_gpu = args.batch_size
 
-        model_kwargs = {"torch_dtype": "auto"}
+        model_kwargs = {"torch_dtype": torch.float16, "low_cpu_mem_usage": True}
         tokenizer_kwargs = {"use_fast": False}
+        config_kwargs = {}
         if args.cache_dir and not os.path.isdir(self.model_name):
             model_kwargs["cache_dir"] = args.cache_dir
             tokenizer_kwargs["cache_dir"] = args.cache_dir
-        self.model = LlamaForCausalLM.from_pretrained(
-            self.model_name, **model_kwargs
-        )
-        if getattr(args, "hidden_layer_num", None):
-            self.truncate_hidden_layers(args.hidden_layer_num)
+            config_kwargs["cache_dir"] = args.cache_dir
+
+        hidden_layers = getattr(args, "hidden_layer_num", None)
+        if hidden_layers:
+            config = AutoConfig.from_pretrained(self.model_name, **config_kwargs)
+            config.num_hidden_layers = hidden_layers
+            self.model = LlamaForCausalLM.from_pretrained(
+                self.model_name, config=config, **model_kwargs
+            )
+        else:
+            self.model = LlamaForCausalLM.from_pretrained(
+                self.model_name, **model_kwargs
+            )
         self.seqlen = self.model.config.max_position_embeddings
         self.model.eval()
 
