@@ -11,11 +11,10 @@ class LlamaClass(BaseLM):
     def __init__(self, args):
         super().__init__()
         self.args = args
-        self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self._device = torch.device("cpu")
         self.model_name = args.model
         self.batch_size_per_gpu = args.batch_size
-
-        model_kwargs = {"torch_dtype": torch.float16, "low_cpu_mem_usage": True}
+        model_kwargs = {"torch_dtype": torch.float32, "low_cpu_mem_usage": True}
         tokenizer_kwargs = {"use_fast": False}
         config_kwargs = {}
         if args.cache_dir and not os.path.isdir(self.model_name):

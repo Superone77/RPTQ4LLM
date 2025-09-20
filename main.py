@@ -3,31 +3,19 @@ import sys
 
 import random
 import numpy as np
-from models.opt import OPTClass
 from models.llama import LlamaClass
 import torch
 import time
 from datautils import get_loaders
-from lm_evaluation.lm_eval import tasks, evaluator
-from quantize.opt_reorder_quantize import opt_reorder_quantize
+from lm_eval import tasks, evaluator
 from quantize.llama_reorder_quantize import llama_reorder_quantize
 import datetime
-from models.int_opt_layer import QuantOPTAttention
 from models.int_llama_layer import QuantLlamaAttention
 from pprint import pprint
-from parallel_utils import map_layers_to_multi_gpus, get_lowest_occupied_gpu
 import torch.nn as nn
 from tqdm import tqdm
 
-torch.backends.cudnn.benchmark = True
-
 net_choices = [
-    "opt-125m",
-    "opt-1.3b",
-    "opt-6.7b",
-    "opt-13b",
-    "opt-30b",
-    "opt-66b",
     "llama-7b",
     "llama-13b",
     "llama3-8b",
@@ -40,72 +28,27 @@ net_choices = [
 @torch.no_grad()
 def evaluate(lm, args):
     for name, m in lm.model.named_modules():
-        if isinstance(m, (QuantOPTAttention, QuantLlamaAttention)):
+        if isinstance(m, QuantLlamaAttention):
             m.name = name
-            # m.register_forward_hook(mem_test_hook)
     results = {}
-    if args.multigpu:
-        if "opt" in args.model:
-            map_layers_to_multi_gpus(lm.model.model.decoder.layers)
-            input_device = lm.model.model.decoder.layers[0].device
-            output_device = lm.model.model.decoder.layers[-1].device
-            lm._device = input_device
-            assert input_device == output_device
-            lm.model.model.decoder.embed_positions.to(input_device)
-
-            lm.model.model.decoder.embed_tokens.to(input_device)
-            lm.model.model.decoder.final_layer_norm.to(output_device)
-            lm.model.lm_head.to(output_device)
-
-        elif "llama" in args.model:
-            map_layers_to_multi_gpus(lm.model.model.layers)
-            input_device = lm.model.model.layers[0].device
-            output_device = lm.model.model.layers[-1].device
-            assert input_device == output_device
-            lm._device = input_device
-    else:
-        if "opt" in args.model:
-            lm.model.model.decoder = lm.model.model.decoder.to(lm.device)
-        elif "llama" in args.model:
-            lm.model.model = lm.model.model.to(lm.device)
+    lm.model.model = lm.model.model.to(lm.device)
 
     if args.eval_ppl:
         for dataset in ["wikitext2", "ptb", "c4"]:
-            # for dataset in ['c4']:
-            if "opt" in args.model:
-                cache_testloader = f"/tmp/{dataset}_testloader_opt_all.cache"
-                if os.path.exists(cache_testloader):
-                    testloader = torch.load(cache_testloader)
-                    # print(f"load calibration from {cache_testloader}")
-                else:
-                    dataloader, testloader = get_loaders(
-                        dataset,
-                        seed=args.seed,
-                        model=args.model,
-                        seqlen=lm.seqlen,
-                        cache_dir=args.cache_dir,
-                    )
-                    torch.save(testloader, cache_testloader)
-            elif "llama" in args.model:
-                cache_testloader = f"/tmp/{dataset}_testloader_llama_all.cache"
-                if os.path.exists(cache_testloader):
-                    testloader = torch.load(cache_testloader)
-                    # print(f"load calibration from {cache_testloader}")
-                else:
-                    dataloader, testloader = get_loaders(
-                        dataset,
-                        seed=args.seed,
-                        model=args.model,
-                        seqlen=lm.seqlen,
-                        cache_dir=args.cache_dir,
-                    )
-                    torch.save(testloader, cache_testloader)
-            # print(dataset)
-            if "c4" == dataset:
-                testenc = testloader
+            cache_testloader = f"/tmp/{dataset}_testloader_llama_all.cache"
+            if os.path.exists(cache_testloader):
+                testloader = torch.load(cache_testloader)
             else:
-                testenc = testloader.input_ids
+                dataloader, testloader = get_loaders(
+                    dataset,
+                    seed=args.seed,
+                    model=args.model,
+                    seqlen=lm.seqlen,
+                    cache_dir=args.cache_dir,
+                )
+                torch.save(testloader, cache_testloader)
 
+            testenc = testloader if dataset == "c4" else testloader.input_ids
             nsamples = testenc.numel() // lm.seqlen
             use_cache = lm.model.config.use_cache
             lm.model.config.use_cache = False
@@ -113,13 +56,8 @@ def evaluate(lm, args):
             nlls = []
 
             for i in tqdm(range(nsamples)):
-                batch = testenc[:, (i * lm.seqlen) : ((i + 1) * lm.seqlen)].to(
-                    lm.device
-                )
-                if "opt" in args.model:
-                    outputs = lm.model.model.decoder(batch)
-                elif "llama" in args.model:
-                    outputs = lm.model.model(batch)
+                batch = testenc[:, (i * lm.seqlen) : ((i + 1) * lm.seqlen)].to(lm.device)
+                outputs = lm.model.model(batch)
                 hidden_states = outputs[0]
                 logits = lm.model.lm_head(hidden_states)
                 shift_logits = logits[:, :-1, :]
@@ -131,15 +69,13 @@ def evaluate(lm, args):
                     shift_logits.view(-1, shift_logits.size(-1)),
                     shift_labels.view(-1),
                 )
-                neg_log_likelihood = loss.float() * lm.seqlen
-                nlls.append(neg_log_likelihood)
+                nlls.append(loss.float() * lm.seqlen)
                 if i == args.limit:
                     break
 
             ppl = torch.exp(torch.stack(nlls).sum() / (nsamples * lm.seqlen))
             print(dataset, ppl.item())
             lm.model.config.use_cache = use_cache
-            # pprint(args.model)
             results[dataset] = ppl.item()
     if args.tasks != "":
         t_results = evaluator.simple_evaluate(
@@ -159,7 +95,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("net", type=str, choices=net_choices)
     parser.add_argument(
-        "--cache_dir", default="./data", type=str, help="OPT model cache_dir"
+        "--cache_dir", default="./data", type=str, help="Model cache directory"
     )
     parser.add_argument(
         "--calib_dataset",
@@ -222,9 +158,6 @@ def main():
         help="enable this to reduce memory consumption",
     )
     parser.add_argument(
-        "--multigpu", action="store_true", help="at eval, map model to multiple gpus"
-    )
-    parser.add_argument(
         "--hidden_layer_num",
         type=int,
         default=None,
@@ -237,60 +170,16 @@ def main():
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    torch.cuda.manual_seed(args.seed)
 
-    if "opt" in args.net:
-        args.model = f"facebook/{args.net}"
-        if not os.path.exists(f"{args.cache_dir}/{args.net.split('-')[0]}/"):
-            os.makedirs(f"{args.cache_dir}/{args.net.split('-')[0]}/")
-        args.cache_dir = (
-            f"{args.cache_dir}/{args.net.split('-')[0]}/{args.net.split('-')[1]}"
-        )
-        print(args.cache_dir)
-        cache_file = f"{args.cache_dir}/torch_model.pth"
-        if os.path.exists(cache_file):
-            lm = torch.load(cache_file)
-        else:
-            lm = OPTClass(args)
-            torch.save(lm, cache_file)
-        lm.model.eval()
-    elif "llama3" in args.net:
+    if "llama3" in args.net:
         size = args.net.split('-')[1]
-        if args.model_path is not None:
-            args.model = args.model_path
-            cache_file = None
-        else:
-            args.model = f"meta-llama/Meta-Llama-3-{size.upper()}"
-            if not os.path.exists(f"{args.cache_dir}/llama3/"):
-                os.makedirs(f"{args.cache_dir}/llama3/")
-            args.cache_dir = f"{args.cache_dir}/llama3/{size}"
-            print(args.cache_dir)
-            cache_file = f"{args.cache_dir}/torch_model.pth"
-        if cache_file and os.path.exists(cache_file):
-            lm = torch.load(cache_file)
-        else:
-            lm = LlamaClass(args)
-            if cache_file:
-                torch.save(lm, cache_file)
+        args.model = args.model_path or f"meta-llama/Meta-Llama-3-{size.upper()}"
+        lm = LlamaClass(args)
         lm.model.eval()
     elif "llama" in args.net:
         size = args.net.split('-')[1]
-        if args.model_path is not None:
-            args.model = args.model_path
-            cache_file = None
-        else:
-            args.model = f"meta-llama/Llama-2-{size}-hf"
-            if not os.path.exists(f"{args.cache_dir}/llama/"):
-                os.makedirs(f"{args.cache_dir}/llama/")
-            args.cache_dir = f"{args.cache_dir}/llama/{size}"
-            print(args.cache_dir)
-            cache_file = f"{args.cache_dir}/torch_model.pth"
-        if cache_file and os.path.exists(cache_file):
-            lm = torch.load(cache_file)
-        else:
-            lm = LlamaClass(args)
-            if cache_file:
-                torch.save(lm, cache_file)
+        args.model = args.model_path or f"meta-llama/Llama-2-{size}-hf"
+        lm = LlamaClass(args)
         lm.model.eval()
     else:
         raise NotImplementedError
@@ -302,44 +191,23 @@ def main():
 
     tick = time.time()
 
-    if "opt" in args.model:
-        cache_dataloader = (
-            f"/tmp/dataloader_opt_{args.calib_dataset}_{args.nsamples}.cache"
-        )
-        if os.path.exists(cache_dataloader):
-            dataloader = torch.load(cache_dataloader)
-            print(f"load calibration from {cache_dataloader}")
-        else:
-            dataloader, testloader = get_loaders(
-                args.calib_dataset,
-                nsamples=args.nsamples,
-                seed=args.seed,
-                model=args.model,
-                seqlen=lm.seqlen,
-                cache_dir=args.cache_dir,
-            )
-            torch.save(dataloader, cache_dataloader)
-        lm.model.eval()
-    elif "llama" in args.model:
-        cache_dataloader = (
-            f"/tmp/dataloader_llama_{args.calib_dataset}_{args.nsamples}.cache"
-        )
-        if os.path.exists(cache_dataloader):
-            dataloader = torch.load(cache_dataloader)
-            print(f"load calibration from {cache_dataloader}")
-        else:
-            dataloader, testloader = get_loaders(
-                args.calib_dataset,
-                nsamples=args.nsamples,
-                seed=args.seed,
-                model=args.model,
-                seqlen=lm.seqlen,
-                cache_dir=args.cache_dir,
-            )
-            torch.save(dataloader, cache_dataloader)
-        lm.model.eval()
+    cache_dataloader = (
+        f"/tmp/dataloader_llama_{args.calib_dataset}_{args.nsamples}.cache"
+    )
+    if os.path.exists(cache_dataloader):
+        dataloader = torch.load(cache_dataloader)
+        print(f"load calibration from {cache_dataloader}")
     else:
-        raise NotImplementedError()
+        dataloader, testloader = get_loaders(
+            args.calib_dataset,
+            nsamples=args.nsamples,
+            seed=args.seed,
+            model=args.model,
+            seqlen=lm.seqlen,
+            cache_dir=args.cache_dir,
+        )
+        torch.save(dataloader, cache_dataloader)
+    lm.model.eval()
 
     args.weight_quant_params = {
         "n_bits": args.wbits,
@@ -393,38 +261,19 @@ def main():
         "R4": args.R4_clusters,
         "R5": args.R5_clusters,
     }
-    if args.multigpu:
-        gpu_id = get_lowest_occupied_gpu(wait_memory=5000)
-        lm._device = f"cuda:{gpu_id}"
-        print(f"set quantization in gpu {gpu_id}")
-    if "opt" in args.model:
-        opt_reorder_quantize(
-            lm,
-            args,
-            dataloader,
-            n_clusters,
-            args.reorder,
-        )
+    llama_reorder_quantize(
+        lm,
+        args,
+        dataloader,
+        n_clusters,
+        args.reorder,
+    )
 
-        for layer in lm.model.model.decoder.layers:
-            if hasattr(layer, "set_quant_state"):
-                layer.set_quant_state(
-                    not args.disable_w_quant, not args.disable_a_quant
-                )
-    elif "llama" in args.model:
-        llama_reorder_quantize(
-            lm,
-            args,
-            dataloader,
-            n_clusters,
-            args.reorder,
-        )
-
-        for layer in lm.model.model.layers:
-            if hasattr(layer, "set_quant_state"):
-                layer.set_quant_state(
-                    not args.disable_w_quant, not args.disable_a_quant
-                )
+    for layer in lm.model.model.layers:
+        if hasattr(layer, "set_quant_state"):
+            layer.set_quant_state(
+                not args.disable_w_quant, not args.disable_a_quant
+            )
 
     print(time.time() - tick)
 
